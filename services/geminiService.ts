@@ -15,10 +15,11 @@ const fileToGenerativePart = async (file: File): Promise<string> => {
 };
 
 const getAIClient = () => {
-  if (!process.env.API_KEY) {
+  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY || process.env.VITE_GOOGLE_API_KEY;
+  if (!apiKey) {
     throw new Error("API_KEY environment variable is not set.");
   }
-  return new GoogleGenerativeAI(process.env.API_KEY);
+  return new GoogleGenerativeAI(apiKey);
 };
 
 export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<string> => {
@@ -158,7 +159,8 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
   parts.unshift({ text: prompt });
 
   try {
-    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Use specific version to avoid ambiguity
+    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-001' });
     const response = await model.generateContent({
       contents: [
         { role: 'user', parts: parts }
