@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { PehanawaConfig } from "../types";
 
 const fileToGenerativePart = async (file: File): Promise<string> => {
@@ -18,7 +18,7 @@ const getAIClient = () => {
   if (!process.env.API_KEY) {
     throw new Error("API_KEY environment variable is not set.");
   }
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return new GoogleGenerativeAI(process.env.API_KEY);
 };
 
 export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<string> => {
@@ -158,12 +158,14 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
   parts.unshift({ text: prompt });
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: parts },
+    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const response = await model.generateContent({
+      contents: [
+        { role: 'user', parts: parts }
+      ],
     });
 
-    const candidates = response.candidates;
+    const candidates = response.response.candidates;
     if (candidates && candidates.length > 0) {
       const parts = candidates[0].content?.parts || [];
       for (const part of parts) {
