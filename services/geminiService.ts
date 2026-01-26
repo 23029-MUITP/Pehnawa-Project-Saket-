@@ -159,8 +159,8 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
   parts.unshift({ text: prompt });
 
   try {
-    // Use specific version to avoid ambiguity
-    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash-001' });
+    // Use standard flash model (aliases to latest stable)
+    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const response = await model.generateContent({
       contents: [
         { role: 'user', parts: parts }
