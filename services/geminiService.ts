@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { PehanawaConfig } from "../types";
 
 const fileToGenerativePart = async (file: File): Promise<string> => {
@@ -19,7 +19,7 @@ const getAIClient = () => {
   if (!apiKey) {
     throw new Error("API_KEY environment variable is not set.");
   }
-  return new GoogleGenerativeAI(apiKey);
+  return new GoogleGenAI({ apiKey });
 };
 
 export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<string> => {
@@ -159,20 +159,24 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
   parts.unshift({ text: prompt });
 
   try {
-    // Use standard flash model (aliases to latest stable)
-    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    const response = await model.generateContent({
-      contents: [
-        { role: 'user', parts: parts }
-      ],
+    // Use gemini-2.0-flash for image generation capabilities
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash-exp',
+      contents: [{ role: 'user', parts: parts }],
     });
 
-    const candidates = response.response.candidates;
+    const candidates = response.candidates;
     if (candidates && candidates.length > 0) {
-      const parts = candidates[0].content?.parts || [];
-      for (const part of parts) {
+      const responseParts = candidates[0].content?.parts || [];
+      for (const part of responseParts) {
         if (part.inlineData && part.inlineData.data) {
           return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+      // If no image, return text response if available
+      for (const part of responseParts) {
+        if (part.text) {
+          throw new Error(`Model returned text instead of image: ${part.text.substring(0, 100)}...`);
         }
       }
     }
