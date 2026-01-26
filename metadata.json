@@ -1,0 +1,7 @@
+{
+  "name": "Pehanawa",
+  "description": "Virtual dressing room utility for staff.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
