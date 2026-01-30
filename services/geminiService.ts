@@ -165,7 +165,6 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
       contents: [{ role: 'user', parts: parts }],
       config: {
         responseModalities: ['image', 'text'],
-        responseMimeType: 'image/png',
       },
     });
 
