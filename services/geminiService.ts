@@ -161,7 +161,7 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
   try {
     // Use gemini-2.5-flash with image generation for best quality virtual try-on
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
+      model: 'gemini-2.5-flash-image',
       contents: [{ role: 'user', parts: parts }],
       config: {
         responseModalities: ['image', 'text'],
