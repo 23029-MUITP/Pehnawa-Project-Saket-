@@ -159,10 +159,14 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
   parts.unshift({ text: prompt });
 
   try {
-    // Use gemini-2.0-flash for image generation capabilities
+    // Use gemini-2.5-flash with image generation for best quality virtual try-on
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash-preview-04-17',
       contents: [{ role: 'user', parts: parts }],
+      config: {
+        responseModalities: ['image', 'text'],
+        responseMimeType: 'image/png',
+      },
     });
 
     const candidates = response.candidates;
