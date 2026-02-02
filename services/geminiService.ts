@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { PehanawaConfig } from "../types";
+import { PehanawaConfig, DesignerRecommendation, GenerationResultWithRecommendations } from "../types";
 
 const fileToGenerativePart = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -22,7 +22,40 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<string> => {
+/**
+ * Parse designer recommendations from the text response
+ */
+function parseDesignerRecommendations(text: string): DesignerRecommendation | undefined {
+  try {
+    // Look for JSON block in the response
+    const jsonMatch = text.match(/\{[\s\S]*"lookName"[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        lookName: parsed.lookName || "Curated Look",
+        pairWith: parsed.pairWith || [],
+        stylingTip: parsed.stylingTip || "",
+        occasions: parsed.occasions || []
+      };
+    }
+
+    // Fallback: try to extract from structured text
+    const lines = text.split('\n').filter(l => l.trim());
+    if (lines.length > 0) {
+      return {
+        lookName: "Designer's Choice",
+        pairWith: lines.slice(0, 3).map(l => l.replace(/^[-•*]\s*/, '').trim()),
+        stylingTip: lines.length > 3 ? lines[3] : "Let the fabric speak for itself.",
+        occasions: ["Formal Events", "Special Occasions"]
+      };
+    }
+  } catch (e) {
+    console.warn("Could not parse designer recommendations:", e);
+  }
+  return undefined;
+}
+
+export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<GenerationResultWithRecommendations> => {
   const ai = getAIClient();
 
   if (!config.clothImage || !config.customerImage) {
@@ -41,8 +74,13 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
   parts.push({ inlineData: { mimeType: config.clothImage.type, data: clothBase64 } });
 
   let prompt = `
-    Act as a high-end AI Stylist.
-    Task: Visualize a customer wearing a specific garment constructed from a source fabric.
+    You are TWO experts in one:
+    1. A MASTER AI STYLIST who creates photorealistic outfit visualizations.
+    2. A CELEBRITY FASHION DESIGNER (like Manish Malhotra) who provides expert styling recommendations.
+
+    YOUR DUAL TASK:
+    A) Generate a stunning outfit image (MOST IMPORTANT)
+    B) Provide brief styling recommendations as JSON text AFTER the image
 
     Reference Images:
     1. IMAGE A (Customer): The person.
@@ -55,7 +93,7 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
     Configuration: SUIT.
     Style: ${config.pieceCount}-Piece Suit.
     
-    Instructions:
+    Instructions for IMAGE:
     - Generate a ${config.pieceCount}-piece suit on the Customer (Image A).
     - Construct the suit using the FABRIC and TEXTURE from Image B.
     - 1-Piece = Jacket/Blazer only.
@@ -84,7 +122,7 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
       parts.push({ inlineData: { mimeType: config.styleReferenceImage.type, data: styleRefBase64 } });
 
       prompt += `
-      Instructions:
+      Instructions for IMAGE:
       - Create an outfit for the Customer (Image A).
       - COPY the silhouette, cut, and style from Image C (Style Reference).
       - USE the FABRIC and PATTERN from Image B to make that outfit.
@@ -100,7 +138,7 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
     prompt += `
     Configuration: SHIRT.
     
-    Instructions:
+    Instructions for IMAGE:
     - Analyze the Fabric in Image B. Determine if it is formal, casual, printed, or solid.
     - Generate a shirt on Customer A that perfectly matches the style of the fabric.
     - If the fabric is plaid/checked -> Casual button down.
@@ -114,7 +152,7 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
     prompt += `
     Configuration: TROUSERS / PANTS.
     
-    Instructions:
+    Instructions for IMAGE:
     - Analyze the Fabric in Image B.
     - Generate trousers/pants on Customer A using Fabric B.
     - Match the cut to the fabric weight (e.g., if denim -> jeans, if wool -> dress pants, if cotton -> chinos).
@@ -132,7 +170,7 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
       parts.push({ inlineData: { mimeType: config.styleReferenceImage.type, data: styleRefBase64 } });
 
       prompt += `
-      Instructions:
+      Instructions for IMAGE:
       - Create an outfit for Customer A.
       - EXACTLY COPY the design and style from Image C.
       - RENDER it using the Fabric from Image B.
@@ -141,7 +179,7 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
       prompt += `
       Style Description: "${config.customPrompt}"
       
-      Instructions:
+      Instructions for IMAGE:
       - Create an outfit for Customer A based on the "Style Description" above.
       - USE the Fabric from Image B.
       - Be creative but realistic.
@@ -150,9 +188,19 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
   }
 
   prompt += `
-    General Rules:
+    General Rules for IMAGE:
     - PRESERVE Customer's (Image A) face and body exactly.
     - High realism, photorealistic texture rendering of Image B.
+
+    AFTER generating the image, provide styling recommendations as a JSON object:
+    {
+      "lookName": "Creative name for this look (e.g., 'Midnight Admiral', 'Royal Heritage')",
+      "pairWith": ["3 specific accessory/item suggestions to complete the look"],
+      "stylingTip": "One expert styling tip from a designer's perspective",
+      "occasions": ["2-3 suitable occasions for this outfit"]
+    }
+
+    IMPORTANT: Generate the IMAGE FIRST, then add the JSON recommendations as text.
   `;
 
   // Prepend text prompt
@@ -169,22 +217,37 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<st
     });
 
     const candidates = response.candidates;
+    let imageData: string | null = null;
+    let textData: string = "";
+
     if (candidates && candidates.length > 0) {
       const responseParts = candidates[0].content?.parts || [];
+
+      // Extract both image and text from response
       for (const part of responseParts) {
         if (part.inlineData && part.inlineData.data) {
-          return `data:image/png;base64,${part.inlineData.data}`;
+          imageData = `data:image/png;base64,${part.inlineData.data}`;
         }
-      }
-      // If no image, return text response if available
-      for (const part of responseParts) {
         if (part.text) {
-          throw new Error(`Model returned text instead of image: ${part.text.substring(0, 100)}...`);
+          textData += part.text;
         }
       }
     }
 
-    throw new Error("Generation failed.");
+    if (!imageData) {
+      if (textData) {
+        throw new Error(`Model returned text instead of image: ${textData.substring(0, 100)}...`);
+      }
+      throw new Error("Generation failed - no image returned.");
+    }
+
+    // Parse recommendations from text response
+    const recommendations = parseDesignerRecommendations(textData);
+
+    return {
+      image: imageData,
+      recommendations: recommendations
+    };
 
   } catch (error: any) {
     console.error("Pehanawa generation error:", error);

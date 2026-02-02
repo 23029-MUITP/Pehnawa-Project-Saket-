@@ -4,13 +4,15 @@ import { FileUpload } from './components/ui/FileUpload';
 import { Button } from './components/ui/Button';
 import { TextInput } from './components/ui/TextInput';
 import { generatePehanawaOutfit } from './services/geminiService';
-import { PehanawaConfig, WizardStep, SuitPieceCount, Category, EthnicType } from './types';
+import { saveCustomerPhoto, getCustomerPhoto, hasCustomerSession, clearCustomerSession } from './services/sessionService';
+import { correctImageColors } from './services/colorCorrectionService';
+import { PehanawaConfig, WizardStep, SuitPieceCount, Category, EthnicType, DesignerRecommendation } from './types';
 
 const App: React.FC = () => {
   // State Machine
   const [step, setStep] = useState<WizardStep>('SELECT_CATEGORY');
   const [config, setConfig] = useState<PehanawaConfig>({
-    category: 'SUIT', 
+    category: 'SUIT',
     pieceCount: 2,
     clothImage: null,
     shirtOption: 'none',
@@ -21,11 +23,20 @@ const App: React.FC = () => {
     customPrompt: '',
   });
   const [resultImage, setResultImage] = useState<string | null>(null);
+  const [designerRecommendation, setDesignerRecommendation] = useState<DesignerRecommendation | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Session state - track if a previous customer photo exists
+  const [hasSession, setHasSession] = useState<boolean>(false);
+
+  // Check for existing session on mount
+  useEffect(() => {
+    setHasSession(hasCustomerSession());
+  }, []);
 
   // Theme Logic
   const [themeMode, setThemeMode] = useState<'default' | 'ethnic'>('default');
-  
+
   // Update theme based on category
   useEffect(() => {
     if (config.category === 'ETHNIC') {
@@ -44,16 +55,16 @@ const App: React.FC = () => {
   // Handlers
   const handleCategorySelect = (category: Category) => {
     setConfig({ ...config, category });
-    
+
     // Slight delay to allow theme transition before moving
     setTimeout(() => {
-        switch (category) {
-            case 'SUIT': goTo('SELECT_SUIT_TYPE'); break;
-            case 'ETHNIC': goTo('SELECT_ETHNIC_TYPE'); break;
-            case 'SHIRTING': goTo('UPLOAD_CLOTH'); break;
-            case 'PANTS': goTo('UPLOAD_CLOTH'); break;
-            case 'OTHERS': goTo('SELECT_OTHERS_MODE'); break;
-        }
+      switch (category) {
+        case 'SUIT': goTo('SELECT_SUIT_TYPE'); break;
+        case 'ETHNIC': goTo('SELECT_ETHNIC_TYPE'); break;
+        case 'SHIRTING': goTo('UPLOAD_CLOTH'); break;
+        case 'PANTS': goTo('UPLOAD_CLOTH'); break;
+        case 'OTHERS': goTo('SELECT_OTHERS_MODE'); break;
+      }
     }, 100);
   };
 
@@ -86,8 +97,18 @@ const App: React.FC = () => {
     goTo('UPLOAD_CLOTH');
   };
 
-  const handleClothUpload = (file: File) => {
-    setConfig({ ...config, clothImage: file });
+  // Handle cloth/fabric upload with automatic color correction
+  const handleClothUpload = async (file: File) => {
+    try {
+      // Apply Shades of Gray color correction to fabric photo
+      const correctedFile = await correctImageColors(file);
+      setConfig({ ...config, clothImage: correctedFile });
+    } catch (e) {
+      // If correction fails, use original file
+      console.warn('Color correction failed, using original:', e);
+      setConfig({ ...config, clothImage: file });
+    }
+
     if (config.category === 'SUIT') {
       goTo('SHIRT_DECISION');
     } else {
@@ -109,17 +130,24 @@ const App: React.FC = () => {
     goTo('UPLOAD_CUSTOMER');
   };
 
-  const handleCustomerUpload = (file: File) => {
+  const handleCustomerUpload = async (file: File) => {
     setConfig({ ...config, customerImage: file });
+    // Save to session storage for reuse
+    await saveCustomerPhoto(file);
+    setHasSession(true);
   };
 
   const handleGenerate = async () => {
     if (!config.customerImage || !config.clothImage) return;
     goTo('GENERATING');
     setError(null);
+    setDesignerRecommendation(null);
     try {
       const result = await generatePehanawaOutfit(config);
-      setResultImage(result);
+      setResultImage(result.image);
+      if (result.recommendations) {
+        setDesignerRecommendation(result.recommendations);
+      }
       goTo('RESULT');
     } catch (err: any) {
       setError(err.message || "Failed. Try again.");
@@ -144,12 +172,47 @@ const App: React.FC = () => {
     goTo('SELECT_CATEGORY');
   };
 
+  // Reset but keep customer session (for trying different fabrics)
+  const tryDifferentFabric = () => {
+    // Load existing customer photo from session
+    const savedPhoto = getCustomerPhoto();
+    setConfig({
+      category: 'SUIT',
+      pieceCount: 2,
+      clothImage: null,
+      shirtOption: 'none',
+      shirtImage: null,
+      customerImage: savedPhoto,
+      ethnicType: 'kurta',
+      styleReferenceImage: null,
+      customPrompt: '',
+    });
+    setResultImage(null);
+    setThemeMode('default');
+    goTo('SELECT_CATEGORY');
+  };
+
+  // Use previous customer photo from session
+  const usePreviousPhoto = () => {
+    const savedPhoto = getCustomerPhoto();
+    if (savedPhoto) {
+      setConfig({ ...config, customerImage: savedPhoto });
+    }
+  };
+
+  // Clear session and start fresh
+  const clearSession = () => {
+    clearCustomerSession();
+    setHasSession(false);
+    reset();
+  };
+
   // --- Dynamic Styles ---
   const isEthnic = themeMode === 'ethnic';
-  const mainContainerClasses = isEthnic 
-    ? 'bg-ethnic-bg text-ethnic-accent selection:bg-ethnic-accent selection:text-ethnic-bg' 
+  const mainContainerClasses = isEthnic
+    ? 'bg-ethnic-bg text-ethnic-accent selection:bg-ethnic-accent selection:text-ethnic-bg'
     : 'bg-white text-black selection:bg-black selection:text-white';
-  
+
   const headingClasses = isEthnic
     ? 'text-4xl md:text-5xl font-serif italic text-ethnic-accent tracking-tight'
     : 'text-4xl md:text-5xl font-bold tracking-tighter';
@@ -173,7 +236,7 @@ const App: React.FC = () => {
         <h2 className={headingClasses}>Select Category.</h2>
         <p className={subHeadingClasses}>What are we designing today?</p>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <button onClick={() => handleCategorySelect('SUIT')} className={cardBaseClasses}>
           <span className={cardTextPrimary}>Suiting</span>
@@ -210,40 +273,40 @@ const App: React.FC = () => {
       case 'SELECT_SUIT_TYPE':
         return (
           <div className="space-y-12 animate-slide-up">
-             <div className="text-center">
-                 <h2 className={headingClasses}>Suit Configuration.</h2>
-                 <p className={subHeadingClasses}>Define the silhouette</p>
-             </div>
-             <div className="space-y-4 max-w-sm mx-auto">
-                {[1, 2, 3].map((num) => (
-                  <Button key={num} onClick={() => handleSuitTypeSelect(num as SuitPieceCount)} variant="outline" theme={themeMode} className="justify-between px-8">
-                    <span className="font-serif italic text-2xl">{num} Piece</span>
-                    <span className="text-xs uppercase tracking-widest opacity-50">Select</span>
-                  </Button>
-                ))}
-             </div>
+            <div className="text-center">
+              <h2 className={headingClasses}>Suit Configuration.</h2>
+              <p className={subHeadingClasses}>Define the silhouette</p>
+            </div>
+            <div className="space-y-4 max-w-sm mx-auto">
+              {[1, 2, 3].map((num) => (
+                <Button key={num} onClick={() => handleSuitTypeSelect(num as SuitPieceCount)} variant="outline" theme={themeMode} className="justify-between px-8">
+                  <span className="font-serif italic text-2xl">{num} Piece</span>
+                  <span className="text-xs uppercase tracking-widest opacity-50">Select</span>
+                </Button>
+              ))}
+            </div>
           </div>
         );
 
       case 'SELECT_ETHNIC_TYPE':
         return (
           <div className="space-y-12 animate-slide-up">
-             <div className="text-center">
-                <h2 className={headingClasses}>Ethnic Style.</h2>
-                <p className={subHeadingClasses}>Rooted in tradition</p>
-             </div>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {['kurta', 'sherwani', 'modi-jacket', 'bandi'].map((t) => (
-                   <Button key={t} onClick={() => handleEthnicTypeSelect(t as EthnicType)} variant="outline" theme={themeMode} className="h-32">
-                     <span className="capitalize font-serif italic text-2xl">{t.replace('-', ' ')}</span>
-                   </Button>
-                ))}
-                <div className="md:col-span-2">
-                    <Button onClick={() => handleEthnicTypeSelect('custom')} variant="primary" theme={themeMode} className="h-24">
-                    Upload Custom Reference
-                    </Button>
-                </div>
-             </div>
+            <div className="text-center">
+              <h2 className={headingClasses}>Ethnic Style.</h2>
+              <p className={subHeadingClasses}>Rooted in tradition</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {['kurta', 'sherwani', 'modi-jacket', 'bandi'].map((t) => (
+                <Button key={t} onClick={() => handleEthnicTypeSelect(t as EthnicType)} variant="outline" theme={themeMode} className="h-32">
+                  <span className="capitalize font-serif italic text-2xl">{t.replace('-', ' ')}</span>
+                </Button>
+              ))}
+              <div className="md:col-span-2">
+                <Button onClick={() => handleEthnicTypeSelect('custom')} variant="primary" theme={themeMode} className="h-24">
+                  Upload Custom Reference
+                </Button>
+              </div>
+            </div>
           </div>
         );
 
@@ -251,8 +314,8 @@ const App: React.FC = () => {
         return (
           <div className="space-y-12 animate-slide-up">
             <div className="text-center">
-                 <h2 className={headingClasses}>Design Approach.</h2>
-                 <p className={subHeadingClasses}>How should we proceed?</p>
+              <h2 className={headingClasses}>Design Approach.</h2>
+              <p className={subHeadingClasses}>How should we proceed?</p>
             </div>
             <div className="grid grid-cols-1 gap-6">
               <Button onClick={() => handleOthersModeSelect('text')} variant="outline" theme={themeMode} className="h-40 flex-col gap-2">
@@ -270,18 +333,18 @@ const App: React.FC = () => {
       case 'INPUT_PROMPT':
         return (
           <div className="space-y-12 animate-slide-up">
-             <div className="text-center">
-                 <h2 className={headingClasses}>The Vision.</h2>
-                 <p className={subHeadingClasses}>Describe in detail</p>
-             </div>
-             <TextInput 
-               label="Style Description"
-               placeholder="e.g., A high-collar trench coat with asymmetrical buttons..."
-               onBlur={(e) => handlePromptSubmit(e.target.value)}
-             />
-             {config.customPrompt && (
-               <Button onClick={() => goTo('UPLOAD_CLOTH')} theme={themeMode}>Continue</Button>
-             )}
+            <div className="text-center">
+              <h2 className={headingClasses}>The Vision.</h2>
+              <p className={subHeadingClasses}>Describe in detail</p>
+            </div>
+            <TextInput
+              label="Style Description"
+              placeholder="e.g., A high-collar trench coat with asymmetrical buttons..."
+              onBlur={(e) => handlePromptSubmit(e.target.value)}
+            />
+            {config.customPrompt && (
+              <Button onClick={() => goTo('UPLOAD_CLOTH')} theme={themeMode}>Continue</Button>
+            )}
           </div>
         );
 
@@ -289,14 +352,15 @@ const App: React.FC = () => {
         return (
           <div className="space-y-12 animate-slide-up">
             <div className="text-center">
-                 <h2 className={headingClasses}>Reference.</h2>
-                 <p className={subHeadingClasses}>Upload style to copy</p>
-             </div>
-            <FileUpload 
-              label="Style Image" 
-              selectedFile={config.styleReferenceImage || null} 
-              onFileSelect={handleStyleRefUpload} 
+              <h2 className={headingClasses}>Reference.</h2>
+              <p className={subHeadingClasses}>Upload style to copy</p>
+            </div>
+            <FileUpload
+              label="Style Image"
+              selectedFile={config.styleReferenceImage || null}
+              onFileSelect={handleStyleRefUpload}
               theme={themeMode}
+              showGalleryOption={true}
             />
           </div>
         );
@@ -305,17 +369,17 @@ const App: React.FC = () => {
         return (
           <div className="space-y-12 animate-slide-up">
             <div className="text-center">
-                 <h2 className={headingClasses}>Material.</h2>
-                 <p className={subHeadingClasses}>
-                    {config.category === 'SHIRTING' || config.category === 'PANTS' 
-                        ? 'AI will analyze fabric type' 
-                        : 'Source Fabric'}
-                 </p>
-             </div>
-            <FileUpload 
-              label="Cloth / Fabric" 
-              selectedFile={config.clothImage} 
-              onFileSelect={handleClothUpload} 
+              <h2 className={headingClasses}>Material.</h2>
+              <p className={subHeadingClasses}>
+                {config.category === 'SHIRTING' || config.category === 'PANTS'
+                  ? 'AI will analyze fabric type'
+                  : 'Source Fabric'}
+              </p>
+            </div>
+            <FileUpload
+              label="Cloth / Fabric"
+              selectedFile={config.clothImage}
+              onFileSelect={handleClothUpload}
               theme={themeMode}
             />
           </div>
@@ -325,12 +389,12 @@ const App: React.FC = () => {
         return (
           <div className="space-y-12 animate-slide-up">
             <div className="text-center">
-                 <h2 className={headingClasses}>Layering.</h2>
-                 <p className={subHeadingClasses}>Add a shirt inside?</p>
-             </div>
+              <h2 className={headingClasses}>Layering.</h2>
+              <p className={subHeadingClasses}>Add a shirt inside?</p>
+            </div>
             <div className="grid grid-cols-2 gap-6">
-               <Button onClick={() => handleShirtDecision(true)} variant="primary" theme={themeMode} className="h-32 text-xl">Yes</Button>
-               <Button onClick={() => handleShirtDecision(false)} variant="secondary" theme={themeMode} className="h-32 text-xl">No</Button>
+              <Button onClick={() => handleShirtDecision(true)} variant="primary" theme={themeMode} className="h-32 text-xl">Yes</Button>
+              <Button onClick={() => handleShirtDecision(false)} variant="secondary" theme={themeMode} className="h-32 text-xl">No</Button>
             </div>
           </div>
         );
@@ -339,9 +403,9 @@ const App: React.FC = () => {
         return (
           <div className="space-y-12 animate-slide-up">
             <div className="text-center">
-                 <h2 className={headingClasses}>Shirt Selection.</h2>
-                 <p className={subHeadingClasses}>Choose the inner layer</p>
-             </div>
+              <h2 className={headingClasses}>Shirt Selection.</h2>
+              <p className={subHeadingClasses}>Choose the inner layer</p>
+            </div>
             <div className="grid grid-cols-2 gap-6">
               <button onClick={() => handleShirtInput('white')} className="h-40 border border-gray-200 hover:border-black transition-all duration-300 flex flex-col items-center justify-center bg-white group">
                 <span className="block w-12 h-12 bg-white border border-gray-200 rounded-full mb-4 shadow-sm group-hover:scale-110 transition-transform"></span>
@@ -353,7 +417,7 @@ const App: React.FC = () => {
               </button>
             </div>
             <div className="text-center">
-                <span className="text-xs uppercase tracking-widest text-gray-400">Or Custom</span>
+              <span className="text-xs uppercase tracking-widest text-gray-400">Or Custom</span>
             </div>
             <FileUpload label="Upload Shirt" selectedFile={config.shirtImage || null} onFileSelect={(f) => handleShirtInput('custom-image', f)} theme={themeMode} />
           </div>
@@ -363,15 +427,34 @@ const App: React.FC = () => {
         return (
           <div className="space-y-12 animate-slide-up">
             <div className="text-center">
-                 <h2 className={headingClasses}>The Subject.</h2>
-                 <p className={subHeadingClasses}>Who is wearing this?</p>
-             </div>
-            <FileUpload 
-              label="Customer Photo" 
-              selectedFile={config.customerImage} 
-              onFileSelect={handleCustomerUpload} 
-              capture="user"
+              <h2 className={headingClasses}>The Subject.</h2>
+              <p className={subHeadingClasses}>Who is wearing this?</p>
+            </div>
+
+            {/* Show "Use Previous Photo" option if session exists and no photo selected yet */}
+            {hasSession && !config.customerImage && (
+              <div className="text-center">
+                <Button
+                  onClick={usePreviousPhoto}
+                  variant="outline"
+                  theme={themeMode}
+                  className="mb-4"
+                >
+                  📸 Use Previous Photo
+                </Button>
+                <p className={`text-xs ${isEthnic ? 'text-ethnic-accent/50' : 'text-gray-400'}`}>
+                  Or take a new photo below
+                </p>
+              </div>
+            )}
+
+            <FileUpload
+              label="Customer Photo"
+              selectedFile={config.customerImage}
+              onFileSelect={handleCustomerUpload}
+              capture="environment"
               theme={themeMode}
+              showGalleryOption={true}
             />
             {config.customerImage && (
               <Button onClick={handleGenerate} theme={themeMode} className="mt-8 animate-pulse-slow">
@@ -394,29 +477,123 @@ const App: React.FC = () => {
       case 'RESULT':
         return (
           <div className="space-y-12 animate-fade-in">
-             <div className="text-center">
-                <h2 className={headingClasses}>The Final Look.</h2>
-             </div>
-             
-             {resultImage && (
-               <div className={`p-4 border shadow-2xl transition-all duration-1000 ${isEthnic ? 'bg-white border-ethnic-border shadow-ethnic-accent/10' : 'bg-white border-gray-100 shadow-black/5'}`}>
-                  <img src={resultImage} alt="Final" className="w-full h-auto" />
-               </div>
-             )}
+            <div className="text-center">
+              <h2 className={headingClasses}>The Final Look.</h2>
+            </div>
 
-             <div className="grid grid-cols-2 gap-6">
-               <Button onClick={() => {
-                  const link = document.createElement('a');
-                  link.href = resultImage || '';
-                  link.download = 'pehanawa-look.png';
-                  link.click();
-               }} variant="outline" theme={themeMode}>
-                 Save
-               </Button>
-               <Button onClick={reset} variant="primary" theme={themeMode}>
-                 New Design
-               </Button>
-             </div>
+            {resultImage && (
+              <div className={`p-4 border shadow-2xl transition-all duration-1000 ${isEthnic ? 'bg-white border-ethnic-border shadow-ethnic-accent/10' : 'bg-white border-gray-100 shadow-black/5'}`}>
+                <img src={resultImage} alt="Final" className="w-full h-auto" />
+              </div>
+            )}
+
+            {/* Designer Recommendations Card */}
+            {designerRecommendation && (
+              <div className={`relative p-6 border transition-all duration-500 
+                ${isEthnic
+                  ? 'bg-gradient-to-br from-ethnic-bg to-ethnic-bg/80 border-ethnic-border shadow-lg shadow-ethnic-accent/5'
+                  : 'bg-gradient-to-br from-gray-50 to-white border-gray-200 shadow-lg shadow-black/5'}
+                transform hover:scale-[1.01] hover:shadow-xl`}
+                style={{
+                  transform: 'perspective(1000px) rotateX(2deg)',
+                  transformStyle: 'preserve-3d'
+                }}
+              >
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200/50">
+                  <span className="text-2xl">✨</span>
+                  <div>
+                    <p className={`text-xs uppercase tracking-[0.2em] ${isEthnic ? 'text-ethnic-accent/50' : 'text-gray-400'}`}>
+                      Designer's Pick
+                    </p>
+                    <h3 className={`text-lg font-semibold ${isEthnic ? 'text-ethnic-accent' : 'text-black'}`}>
+                      {designerRecommendation.lookName}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Pair With Section */}
+                {designerRecommendation.pairWith.length > 0 && (
+                  <div className="mb-5">
+                    <p className={`text-xs uppercase tracking-widest mb-3 ${isEthnic ? 'text-ethnic-accent/60' : 'text-gray-500'}`}>
+                      💎 Complete The Look
+                    </p>
+                    <ul className="space-y-2">
+                      {designerRecommendation.pairWith.slice(0, 3).map((item, index) => (
+                        <li
+                          key={index}
+                          className={`text-sm pl-4 border-l-2 ${isEthnic ? 'border-ethnic-accent/30 text-ethnic-accent/80' : 'border-gray-300 text-gray-600'}`}
+                        >
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Styling Tip */}
+                {designerRecommendation.stylingTip && (
+                  <div className="mb-5">
+                    <p className={`text-xs uppercase tracking-widest mb-2 ${isEthnic ? 'text-ethnic-accent/60' : 'text-gray-500'}`}>
+                      🎯 Pro Tip
+                    </p>
+                    <p className={`text-sm italic ${isEthnic ? 'text-ethnic-accent/70' : 'text-gray-600'}`}>
+                      "{designerRecommendation.stylingTip}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Occasions */}
+                {designerRecommendation.occasions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-200/30">
+                    {designerRecommendation.occasions.map((occasion, index) => (
+                      <span
+                        key={index}
+                        className={`text-xs px-3 py-1 rounded-full ${isEthnic
+                          ? 'bg-ethnic-accent/10 text-ethnic-accent/70'
+                          : 'bg-gray-100 text-gray-500'}`}
+                      >
+                        {occasion}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-6">
+              <Button onClick={() => {
+                const link = document.createElement('a');
+                link.href = resultImage || '';
+                link.download = 'pehanawa-look.png';
+                link.click();
+              }} variant="outline" theme={themeMode}>
+                Save
+              </Button>
+
+              {/* Try different fabric with same customer photo */}
+              {hasSession ? (
+                <Button onClick={tryDifferentFabric} variant="primary" theme={themeMode}>
+                  Try Different Fabric
+                </Button>
+              ) : (
+                <Button onClick={reset} variant="primary" theme={themeMode}>
+                  New Design
+                </Button>
+              )}
+            </div>
+
+            {/* Option to start completely fresh */}
+            {hasSession && (
+              <div className="text-center">
+                <button
+                  onClick={clearSession}
+                  className={`text-xs uppercase tracking-widest ${isEthnic ? 'text-ethnic-accent/40 hover:text-ethnic-accent' : 'text-gray-400 hover:text-black'} transition-colors`}
+                >
+                  Clear Session & Start Fresh
+                </button>
+              </div>
+            )}
           </div>
         );
     }
@@ -427,16 +604,16 @@ const App: React.FC = () => {
       <Header theme={isEthnic ? 'ethnic' : 'light'} />
       <main className="max-w-3xl mx-auto px-6 pb-24 pt-4">
         {renderContent()}
-        
+
         {step !== 'SELECT_CATEGORY' && step !== 'RESULT' && step !== 'GENERATING' && (
-           <div className="fixed bottom-10 left-0 w-full text-center pointer-events-none z-50">
-             <button 
-               onClick={() => setStep('SELECT_CATEGORY')} 
-               className={`pointer-events-auto text-xs uppercase tracking-[0.2em] transition-all duration-300 pb-1 border-b border-transparent ${isEthnic ? 'text-ethnic-accent/40 hover:text-ethnic-accent hover:border-ethnic-accent' : 'text-gray-300 hover:text-black hover:border-black'}`}
-             >
-               Abort Process
-             </button>
-           </div>
+          <div className="fixed bottom-10 left-0 w-full text-center pointer-events-none z-50">
+            <button
+              onClick={() => setStep('SELECT_CATEGORY')}
+              className={`pointer-events-auto text-xs uppercase tracking-[0.2em] transition-all duration-300 pb-1 border-b border-transparent ${isEthnic ? 'text-ethnic-accent/40 hover:text-ethnic-accent hover:border-ethnic-accent' : 'text-gray-300 hover:text-black hover:border-black'}`}
+            >
+              Abort Process
+            </button>
+          </div>
         )}
       </main>
     </div>

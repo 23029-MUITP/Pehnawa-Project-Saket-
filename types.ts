@@ -13,17 +13,17 @@ export interface PehanawaConfig {
 
   // Ethnic Specific
   ethnicType?: EthnicType;
-  
+
   // Others / Custom
   customPrompt?: string; // For text-based style description
-  
+
   // Shared
   styleReferenceImage?: File | null; // For Ethnic Custom or Others Custom
   clothImage: File | null; // The fabric or garment to apply
   customerImage: File | null;
 }
 
-export type WizardStep = 
+export type WizardStep =
   | 'SELECT_CATEGORY'
   | 'SELECT_SUIT_TYPE'
   | 'SELECT_ETHNIC_TYPE'
@@ -42,8 +42,27 @@ export interface GenerationResult {
   error: string | null;
 }
 
+export interface DesignerRecommendation {
+  lookName: string;           // "Royal Navy Power Suit"
+  pairWith: string[];         // Array of accessory suggestions
+  stylingTip: string;         // One key styling tip
+  occasions: string[];        // Suitable occasions
+}
+
+export interface GenerationResultWithRecommendations {
+  image: string;
+  recommendations?: DesignerRecommendation;
+}
+
 export interface AlchemyInsight {
   title: string;
   description: string;
   suggestion: string;
+}
+
+export interface CustomerSession {
+  sessionId: string;
+  customerImageBase64: string;
+  customerImageType: string;
+  createdAt: number;
 }
