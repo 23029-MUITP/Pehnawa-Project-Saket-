@@ -6,6 +6,7 @@ import { TextInput } from './components/ui/TextInput';
 import { generatePehanawaOutfit } from './services/geminiService';
 import { saveCustomerPhoto, getCustomerPhoto, hasCustomerSession, clearCustomerSession } from './services/sessionService';
 import { correctImageColors } from './services/colorCorrectionService';
+import { addWatermark } from './services/watermarkService';
 import { PehanawaConfig, WizardStep, SuitPieceCount, Category, EthnicType, DesignerRecommendation } from './types';
 
 const App: React.FC = () => {
@@ -77,9 +78,16 @@ const App: React.FC = () => {
     setConfig({ ...config, ethnicType: type });
     if (type === 'custom') {
       goTo('UPLOAD_STYLE_REF');
+    } else if (type === 'sherwani') {
+      goTo('SHERWANI_STYLE_DECISION');
     } else {
       goTo('UPLOAD_CLOTH');
     }
+  };
+
+  const handleSherwaniStyleSelect = (style: 'open' | 'closed') => {
+    setConfig({ ...config, sherwaniStyle: style });
+    goTo('UPLOAD_CLOTH');
   };
 
   const handleOthersModeSelect = (mode: 'text' | 'image') => {
@@ -109,7 +117,7 @@ const App: React.FC = () => {
       setConfig({ ...config, clothImage: file });
     }
 
-    if (config.category === 'SUIT') {
+    if (config.category === 'SUIT' || (config.category === 'ETHNIC' && config.ethnicType === 'blazer')) {
       goTo('SHIRT_DECISION');
     } else {
       goTo('UPLOAD_CUSTOMER');
@@ -296,7 +304,7 @@ const App: React.FC = () => {
               <p className={subHeadingClasses}>Rooted in tradition</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {['kurta', 'sherwani', 'modi-jacket', 'bandi'].map((t) => (
+              {['kurta', 'sherwani', 'jodhpuri', 'bandi', 'blazer'].map((t) => (
                 <Button key={t} onClick={() => handleEthnicTypeSelect(t as EthnicType)} variant="outline" theme={themeMode} className="h-32">
                   <span className="capitalize font-serif italic text-2xl">{t.replace('-', ' ')}</span>
                 </Button>
@@ -306,6 +314,23 @@ const App: React.FC = () => {
                   Upload Custom Reference
                 </Button>
               </div>
+            </div>
+          </div>
+        );
+
+      case 'SHERWANI_STYLE_DECISION':
+        return (
+          <div className="space-y-12 animate-slide-up">
+            <div className="text-center">
+              <h2 className={headingClasses}>Sherwani Style.</h2>
+              <p className={subHeadingClasses}>Choose the front cut</p>
+            </div>
+            <div className="grid grid-cols-2 gap-6">
+              <Button onClick={() => handleSherwaniStyleSelect('open')} variant="primary" theme={themeMode} className="h-32 text-xl flex-col gap-2">
+                <span>Open front</span>
+                <span className="text-[10px] uppercase tracking-widest opacity-70">(Shrug Style)</span>
+              </Button>
+              <Button onClick={() => handleSherwaniStyleSelect('closed')} variant="secondary" theme={themeMode} className="h-32 text-xl">Closed</Button>
             </div>
           </div>
         );
@@ -562,24 +587,67 @@ const App: React.FC = () => {
             )}
 
             <div className="grid grid-cols-2 gap-6">
-              <Button onClick={() => {
-                const link = document.createElement('a');
-                link.href = resultImage || '';
-                link.download = 'pehanawa-look.png';
-                link.click();
+              <Button onClick={async () => {
+                if (!resultImage) return;
+                try {
+                  const watermarkedImage = await addWatermark(resultImage);
+                  const link = document.createElement('a');
+                  link.href = watermarkedImage;
+                  link.download = 'pehanawa-saket-look.png';
+                  link.click();
+                } catch (error) {
+                  console.error('Failed to save image:', error);
+                  alert('Failed to save image. Please try again.');
+                }
               }} variant="outline" theme={themeMode}>
                 Save
               </Button>
 
+              <Button onClick={async () => {
+                if (!resultImage) return;
+                try {
+                  const watermarkedImage = await addWatermark(resultImage);
+
+                  // Convert data URL to Blob
+                  const response = await fetch(watermarkedImage);
+                  const blob = await response.blob();
+                  const file = new File([blob], 'pehanawa-saket-look.png', { type: 'image/png' });
+
+                  if (navigator.share && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                      title: 'My Saket Look',
+                      text: 'Check out this outfit I designed with Saket AI!',
+                      files: [file],
+                    });
+                  } else {
+                    // Fallback for desktop or unsupported browsers
+                    const link = document.createElement('a');
+                    link.href = watermarkedImage;
+                    link.download = 'pehanawa-saket-look.png';
+                    link.click();
+                    alert('Image saved! Sharing is not supported on this device/browser.');
+                  }
+                } catch (error) {
+                  console.error('Failed to share image:', error);
+                  alert('Failed to share image. Please try again.');
+                }
+              }} variant="primary" theme={themeMode}>
+                Share
+              </Button>
+
               {/* Try different fabric with same customer photo */}
               {hasSession ? (
-                <Button onClick={tryDifferentFabric} variant="primary" theme={themeMode}>
-                  Try Different Fabric
-                </Button>
+                <div className="col-span-2 mt-4">
+                  <Button onClick={tryDifferentFabric} variant="outline" theme={themeMode} className="w-full">
+                    Try Different Fabric
+                  </Button>
+                </div>
               ) : (
-                <Button onClick={reset} variant="primary" theme={themeMode}>
-                  New Design
-                </Button>
+                <div className="col-span-2 mt-4">
+                  <Button onClick={reset} variant="outline" theme={themeMode} className="w-full">
+                    New Design
+                  </Button>
+                </div>
               )}
             </div>
 

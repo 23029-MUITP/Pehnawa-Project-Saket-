@@ -129,7 +129,33 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<Ge
       `;
     } else {
       const typeName = config.ethnicType?.replace('-', ' ').toUpperCase() || 'ETHNIC OUTFIT';
-      prompt += `Type: ${typeName}.\nInstructions:\n- Generate a traditional ${typeName} using Fabric B on Customer A.`;
+
+      if (config.ethnicType === 'sherwani' && config.sherwaniStyle === 'open') {
+        prompt += `Type: OPEN FRONT SHERWANI (Shrug style).\n`;
+        prompt += `Instructions for IMAGE:
+        - Generate an OPEN FRONT SHERWANI (Shrug style) on Customer A.
+        - The front should be unbuttoned/v-shape opening like a long shrug.
+        - Use Fabric B for the sherwani.
+        - Wear a neutral or contrasting kurta inside to complete the sherwani look.`;
+      } else if (config.ethnicType === 'blazer') {
+        prompt += `Type: BLAZER.\n`;
+        prompt += `Instructions for IMAGE:
+        - Generate a sharp, perfectly tailored BLAZER on Customer A using Fabric B.`;
+
+        if (config.shirtOption === 'white') {
+          prompt += `\n- Wear a clean white formal shirt inside.`;
+        } else if (config.shirtOption === 'black') {
+          prompt += `\n- Wear a black formal shirt inside.`;
+        }
+      } else if (config.ethnicType === 'jodhpuri') {
+        prompt += `Type: JODHPURI SUIT.\n`;
+        prompt += `Instructions for IMAGE:
+        - Generate a royal JODHPURI SUIT on Customer A using Fabric B.
+        - High-collared بند گلا (Bandhgala) jacket with a sharp, sophisticated silhouette.
+        - Pocket square and statement buttons as per traditional Jodhpuri style.`;
+      } else {
+        prompt += `Type: ${typeName}.\nInstructions:\n- Generate a traditional ${typeName} using Fabric B on Customer A.`;
+      }
     }
   }
 
@@ -185,6 +211,13 @@ export const generatePehanawaOutfit = async (config: PehanawaConfig): Promise<Ge
       - Be creative but realistic.
       `;
     }
+  }
+
+  // --- SHOE LOGIC ---
+  if (config.category === 'SUIT' || (config.category === 'ETHNIC' && config.ethnicType === 'blazer')) {
+    prompt += `\n- Footwear: Always include a pair of polished FORMAL SHOES that complement the outfit.`;
+  } else if (config.category === 'ETHNIC') {
+    prompt += `\n- Footwear: Always include a good pair of LOAFERS (Mojis/Juttis) that match the ethnic style.`;
   }
 
   prompt += `

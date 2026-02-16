@@ -1,6 +1,6 @@
 export type Category = 'SUIT' | 'ETHNIC' | 'SHIRTING' | 'PANTS' | 'OTHERS';
 export type SuitPieceCount = 1 | 2 | 3;
-export type EthnicType = 'kurta' | 'sherwani' | 'modi-jacket' | 'bandi' | 'custom';
+export type EthnicType = 'kurta' | 'sherwani' | 'jodhpuri' | 'bandi' | 'blazer' | 'custom';
 export type ShirtOption = 'none' | 'white' | 'black' | 'custom-image';
 
 export interface PehanawaConfig {
@@ -13,6 +13,7 @@ export interface PehanawaConfig {
 
   // Ethnic Specific
   ethnicType?: EthnicType;
+  sherwaniStyle?: 'open' | 'closed'; // Specifically for Sherwani
 
   // Others / Custom
   customPrompt?: string; // For text-based style description
@@ -27,6 +28,7 @@ export type WizardStep =
   | 'SELECT_CATEGORY'
   | 'SELECT_SUIT_TYPE'
   | 'SELECT_ETHNIC_TYPE'
+  | 'SHERWANI_STYLE_DECISION'
   | 'SELECT_OTHERS_MODE' // Text vs Image for Others
   | 'INPUT_PROMPT'       // Text input for Others
   | 'UPLOAD_STYLE_REF'   // Image input for Ethnic/Others
