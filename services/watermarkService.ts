@@ -72,18 +72,17 @@ export const addWatermark = (imageUrl: string, watermarkText: string = 'Saket'):
                 // Adjust these values based on the actual logo image
                 makeTransparent(logoCtx, logoCanvas.width, logoCanvas.height, [240, 230, 74], 100);
 
-                // Calculate size: logo should be small (e.g., 15% of the main image width)
-                const scale = (mainImg.width * 0.15) / logoImg.width;
+                // Calculate size: logo should be large (e.g., 35% of the main image width)
+                const scale = (mainImg.width * 0.35) / logoImg.width;
                 const logoW = logoImg.width * scale;
                 const logoH = logoImg.height * scale;
 
-                // Position: Bottom right
-                const padding = mainImg.width * 0.03;
-                const x = canvas.width - logoW - padding;
-                const y = canvas.height - logoH - padding;
+                // Position: Middle of the image
+                const x = (canvas.width - logoW) / 2;
+                const y = (canvas.height - logoH) / 2;
 
                 // Draw the processed logo onto the main canvas
-                ctx.globalAlpha = 0.8; // Make it slightly transparent
+                ctx.globalAlpha = 0.9; // Make it more visible
                 ctx.drawImage(logoCanvas, x, y, logoW, logoH);
                 ctx.globalAlpha = 1.0;
 
@@ -93,13 +92,16 @@ export const addWatermark = (imageUrl: string, watermarkText: string = 'Saket'):
             logoImg.onerror = () => {
                 // Fallback to text watermark if logo fails to load
                 console.warn('Logo failed to load, falling back to text watermark.');
-                const fontSize = Math.max(16, Math.floor(mainImg.width * 0.05));
-                ctx.font = `italic ${fontSize}px "Playfair Display", serif`;
-                ctx.fillStyle = 'rgba(255, 69, 0, 0.7)';
-                ctx.textAlign = 'right';
-                ctx.textBaseline = 'bottom';
-                const padding = fontSize;
-                ctx.fillText(watermarkText, canvas.width - padding, canvas.height - padding);
+                // Make font larger
+                const fontSize = Math.max(24, Math.floor(mainImg.width * 0.08));
+                // Make font bold
+                ctx.font = `bold ${fontSize}px "Playfair Display", serif`;
+                ctx.fillStyle = 'rgba(255, 69, 0, 0.9)'; // Less transparent
+
+                // Position in the middle
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(watermarkText, canvas.width / 2, canvas.height / 2);
                 resolve(canvas.toDataURL('image/png'));
             };
 
